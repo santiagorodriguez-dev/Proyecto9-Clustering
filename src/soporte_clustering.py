@@ -33,6 +33,73 @@ from sklearn.cluster import SpectralClustering
 # -----------------------------------------------------------------------
 import scipy.cluster.hierarchy as sch
 
+from tqdm import tqdm
+
+
+def mejor_cluster_AgglomerativeClustering(df):
+        # Configuraciones de vinculación y métricas de distancia
+    linkage_methods = ['single', 'complete', 'average', 'ward']
+    distance_metrics = ['euclidean', 'cosine', 'chebyshev']
+
+    # Crear un DataFrame para almacenar los resultados
+    results = []
+
+    # Suponiendo que tienes un DataFrame llamado df_copia
+    # Aquí df_copia debería ser tu conjunto de datos
+    # Asegúrate de que esté preprocesado adecuadamente (normalizado si es necesario)
+
+    for linkage_method in linkage_methods:
+        for metric in distance_metrics:
+            #for cluster in tqdm(range(3,10)):
+            for cluster in range(3,10):
+                try:
+                    # Configurar el modelo de AgglomerativeClustering
+                    modelo = AgglomerativeClustering(
+                        linkage=linkage_method,
+                        metric=metric,  
+                        distance_threshold=None,  # Para buscar n_clusters
+                        n_clusters=cluster, # Cambia esto según tu análisis
+                    )
+                    
+                    # Ajustar el modelo
+                    labels = modelo.fit_predict(df)
+                    # Calcular métricas si hay más de un cluster
+                    if len(np.unique(labels)) > 1:
+                        # Silhouette Score
+                        silhouette_avg = silhouette_score(df, labels, metric=metric)
+
+                        # Davies-Bouldin Index
+                        db_score = davies_bouldin_score(df, labels)
+                        
+                        # Cardinalidad (tamaño de cada cluster)
+                        cluster_cardinality = {cluster: sum(labels == cluster) for cluster in np.unique(labels)}
+                    else:
+                        inertia = float('inf')
+                        cluster_cardinality = {'Cluster único': len(df)}
+
+                    # Almacenar resultados
+                    results.append({
+                        'linkage': linkage_method,
+                        'metric': metric,
+                        'silhouette_score': silhouette_avg,
+                        'davies_bouldin_index': db_score,
+                        'cluster_cardinality': cluster_cardinality,
+                        'n_cluster': cluster
+                    })
+
+                except Exception as e:
+                    #print(f"Error con linkage={linkage_method}, metric={metric}: {e}")
+                    pass
+
+    # Crear DataFrame de resultados
+    results_df = pd.DataFrame(results)
+
+    # Mostrar resultados ordenados por silhouette_score
+    results_df = results_df.sort_values(by='silhouette_score', ascending=False)
+
+    # Mostrar el DataFrame
+    return results_df.head(5)
+
 class Exploracion:
     """
     Clase para realizar la exploración y visualización de datos en un DataFrame.
@@ -296,7 +363,7 @@ class Clustering:
         """
         self.dataframe = dataframe
     
-    def sacar_clusters_kmeans(self, n_clusters=(2, 5)):
+    def sacar_clusters_kmeans(self, n_clusters=(2, 6), random_state=42):
         """
         Utiliza KMeans y KElbowVisualizer para determinar el número óptimo de clusters basado en la métrica de silhouette.
 
@@ -306,12 +373,12 @@ class Clustering:
         Returns:
             None
         """
-        model = KMeans()
+        model = KMeans(random_state = random_state)
         visualizer = KElbowVisualizer(model, k=n_clusters, metric='silhouette')
         visualizer.fit(self.dataframe)
         visualizer.show()
     
-    def modelo_kmeans(self, dataframe_original, num_clusters):
+    def modelo_kmeans(self, dataframe_original, num_clusters, random_state=42):
         """
         Aplica KMeans al DataFrame y añade las etiquetas de clusters al DataFrame original.
 
@@ -322,7 +389,7 @@ class Clustering:
         Returns:
             - pd.DataFrame. El DataFrame original con una nueva columna para las etiquetas de clusters.
         """
-        kmeans = KMeans(n_clusters=num_clusters)
+        kmeans = KMeans(n_clusters=num_clusters,random_state = random_state)
         km_fit = kmeans.fit(self.dataframe)
         labels = km_fit.labels_
         dataframe_original["clusters_kmeans"] = labels.astype(str)
@@ -351,7 +418,7 @@ class Clustering:
             axes[indice].set_xlabel('Muestras')
             axes[indice].set_ylabel('Distancias')
     
-    def modelo_aglomerativo(self, num_clusters, metodo_distancias, dataframe_original):
+    def modelo_aglomerativo(self, num_clusters, metodo_distancias, dataframe_original, metric):
         """
         Aplica clustering aglomerativo al DataFrame y añade las etiquetas de clusters al DataFrame original.
 
@@ -366,7 +433,8 @@ class Clustering:
         modelo = AgglomerativeClustering(
             linkage=metodo_distancias,
             distance_threshold=None,
-            n_clusters=num_clusters
+            n_clusters=num_clusters,
+            metric = metric
         )
         aglo_fit = modelo.fit(self.dataframe)
         labels = aglo_fit.labels_
@@ -494,14 +562,14 @@ class Clustering:
 
         return dataframe_original
 
-    def calcular_metricas(self, labels: np.ndarray):
+    def calcular_metricas(self, labels: np.ndarray, random_state=42):
         """
         Calcula métricas de evaluación del clustering.
         """
         if len(set(labels)) <= 1:
             raise ValueError("El clustering debe tener al menos 2 clusters para calcular las métricas.")
 
-        silhouette = silhouette_score(self.dataframe, labels)
+        silhouette = silhouette_score(X=self.dataframe, labels=labels, random_state=random_state)
         davies_bouldin = davies_bouldin_score(self.dataframe, labels)
 
         unique, counts = np.unique(labels, return_counts=True)
